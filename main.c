@@ -1,11 +1,12 @@
 #define F_CPU 16000000
-#define ARRAY_LEN 6
+
 #define STR_LEN 16
-#define IND_CONST 1010647491 // Approximate result of 4 pi^2 16MHz^2 C / 1'000
-#define DELTA_MAX 10
+#define ARRAY_LEN 6
+//#define IND_CONST 1010647491 // Approximate result of 4 pi^2 16MHz^2 C / 1'000
+#define IND_CONST 1050000000 // Same, adjusted for capacitor error
+#define DELTA_MAX 0
 
 #define CAP_OFFSET 8
-
 #define CAP_CONST_PRE_1_RES_220	    2600000// * power = 3
 #define CAP_CONST_PRE_1_RES_10K    55000000// * power = 3
 #define CAP_CONST_PRE_64_RES_220   44000000// * power = 0
@@ -21,18 +22,17 @@
 #include "lcd.h"
 
 uint8_t task = CAP_TASK;
+char string[STR_LEN];
 
-uint8_t i, flag, power, divisor, debug, button_flag;
+uint8_t i, flag, power, divisor, button_flag;
+uint16_t cap_delay, cap_delay_debug;
+uint32_t capacitance;
 
 uint16_t val[ARRAY_LEN];
 uint16_t dmin, dmax;
 
-uint16_t cap_delay, cap_delay_debug;
-
 uint32_t davg, davgsquared, L, Ldecimal, denominator;
-uint32_t capacitance;
 
-char string[STR_LEN];
 
 void cap_task();
 void ind_task();
@@ -108,6 +108,12 @@ void measuring_delay_ms(uint16_t milli_seconds)
  */
 void main()
 {
+	// Pin D1 as output (transistor base) Done here to avoid being on
+	// at startup because of the LED connected to Vcc on Nano board
+	DDRD |= (1 << PD1);
+	// D1 LOW
+	PORTD &= ~(1 << PD1);
+
 	// Pins A0 - A5 outputs
 	DDRC = 0b00111111;
 	Lcd4_Init();
@@ -172,7 +178,7 @@ void cap_task()
 	denominator = CAP_CONST_PRE_1_RES_220;
 	power = 3;
 
-	// Pin D8 HIGH
+	// Pin D8 LOW
 	PORTB &= ~(1 << PB0);
 
 	// Pin D8 Output (res = 220)
@@ -184,6 +190,7 @@ void cap_task()
 
 	TCNT1 = 0;
 
+	// Pin D8 HIGH
 	PORTB |= (1 << PB0);
 
 	_delay_ms(4);
@@ -199,7 +206,7 @@ void cap_task()
 		denominator = CAP_CONST_PRE_1_RES_10K;
 		power = 3;
 
-		// Pin D9 HIGH
+		// Pin D9 LOW
 		PORTB &= ~(1 << PB1);
 
 		// Pin D9 Output (res = 10k)
@@ -211,6 +218,7 @@ void cap_task()
 
 		TCNT1 = 0;
 
+		// Pin D9 HIGH
 		PORTB |= (1 << PB1);
 
 		_delay_ms(4);
@@ -278,7 +286,8 @@ void cap_task()
 			flag = 0;
 	
 			TCNT1 = 0;
-	
+
+			// Pin D8 HIGH
 			PORTB |= (1 << PB0);
 	
 			// Wait 4 seconds
@@ -361,9 +370,7 @@ void cap_task()
  */
 void ind_task()
 {
-
-	// Pin D1 as output (transistor base)
-	DDRD |= (1 << PD1);
+	//TCCR1B |= (1 << ICNC1);// Enable noise cancelling (optional)
 
 	// Setup of AC
 	ADMUX |= 0b00000111;// Select ADC7 pin as inverting input of AC
@@ -379,11 +386,13 @@ void ind_task()
 	// Set Pin D1 to HIGH
 	PORTD |= (1 << PD1);
 
+	_delay_us(2);
+	/*
 	// Delay for approx 250 ns
 	asm("nop");
 	asm("nop");
 	asm("nop");
-
+	*/
 
 	TCNT1 = 0;
 	// Pin D1 to LOW
@@ -402,6 +411,11 @@ void ind_task()
 	{
 		// if a value is null, kepp track with "divisor" and skip loop
 		if(val[i] == 0){
+			divisor = i - 1;
+			continue;
+		}
+		// if a value is same as previous, ignore it
+		if(val[i] == val[i - 1]){
 			divisor = i - 1;
 			continue;
 		}
@@ -470,8 +484,19 @@ void ind_task()
 	else if(dmin == 0xffff)
 		Lcd4_Write_String("Open");
 
-	else
-		Lcd4_Write_String("Error");
+	else{
+		Lcd4_Clear();
+
+		Lcd4_Set_Cursor(0, 0);
+		sprintf(string, "%d, %d, %d", val[0], val[1], val[2]);
+		Lcd4_Write_String(string);
+
+		Lcd4_Set_Cursor(1, 0);
+		sprintf(string, "%d, %d, %d", val[3], val[4], val[5]);
+		Lcd4_Write_String(string);
+			
+		//Lcd4_Write_String("Error");
+	}
 
 	for(i = 0; i < ARRAY_LEN; i++)
 		val[i] = 0;
