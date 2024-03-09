@@ -370,7 +370,7 @@ void cap_task()
  */
 void ind_task()
 {
-	//TCCR1B |= (1 << ICNC1);// Enable noise cancelling (optional)
+	//TCCR1B |= (1 << ICNC1);// Noise cancelling (optional) correct CAP if used.
 
 	// Setup of AC
 	ADMUX |= 0b00000111;// Select ADC7 pin as inverting input of AC
